@@ -1,0 +1,16 @@
+{
+  "name": "kryzen-overlay-relay",
+  "version": "1.0.0",
+  "description": "Serveur relais Fortnite pour overlay KRYZEN",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
