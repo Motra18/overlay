@@ -1,16 +1,75 @@
-{
-  "name": "kryzen-overlay-relay",
-  "version": "1.0.0",
-  "description": "Serveur relais Fortnite pour overlay KRYZEN",
-  "main": "server.js",
-  "type": "commonjs",
-  "scripts": {
-    "start": "node server.js"
-  },
-  "engines": {
-    "node": ">=18"
-  },
-  "dependencies": {
-    "express": "^4.19.2"
+// ─────────────────────────────────────────────────────────────
+//  KRYZEN — Serveur relais Fortnite + Score de Cup
+// ─────────────────────────────────────────────────────────────
+const express = require("express");
+const app = express();
+app.use(express.json());
+
+const PORT = process.env.PORT || 3000;
+const API_KEY = process.env.FORTNITE_API_KEY;
+const DEFAULT_NAME = process.env.PLAYER_NAME || "guido pit stop!";
+
+// CORS pour tout le monde (overlay + panneau)
+app.use((req, res, next) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  if (req.method === "OPTIONS") return res.sendStatus(200);
+  next();
+});
+
+// ── Score de cup en mémoire ──────────────────────────────
+let cup = { points: 0, games: 0, wins: 0 };
+
+app.get("/", (req, res) => {
+  res.send("KRYZEN relay OK. /stats (carriere) ou /cup (score de cup)");
+});
+
+// Lire le score de cup (l'overlay appelle ca)
+app.get("/cup", (req, res) => {
+  res.json(cup);
+});
+
+// Mettre a jour le score de cup (le panneau appelle ca)
+app.post("/cup", (req, res) => {
+  const b = req.body || {};
+  if (typeof b.points === "number") cup.points = b.points;
+  if (typeof b.games  === "number") cup.games  = b.games;
+  if (typeof b.wins   === "number") cup.wins   = b.wins;
+  res.json(cup);
+});
+
+// ── Stats de carriere (garde au cas ou) ──────────────────
+let cache = { data: null, name: null, time: 0 };
+const CACHE_MS = 60 * 1000;
+
+app.get("/stats", async (req, res) => {
+  const name = (req.query.name || DEFAULT_NAME).trim();
+  if (cache.data && cache.name === name && Date.now() - cache.time < CACHE_MS) {
+    return res.json(cache.data);
   }
-}
+  if (!API_KEY) return res.status(500).json({ error: "FORTNITE_API_KEY manquante" });
+  try {
+    const url = "https://fortnite-api.com/v2/stats/br/v2?name=" + encodeURIComponent(name);
+    const r = await fetch(url, { headers: { Authorization: API_KEY } });
+    if (!r.ok) {
+      const txt = await r.text();
+      return res.status(r.status).json({ error: "API error", detail: txt });
+    }
+    const json = await r.json();
+    const d = json.data || {};
+    const o = (d.stats && d.stats.all && d.stats.all.overall) || {};
+    const out = {
+      name: d.account ? d.account.name : name,
+      wins: o.wins ?? null, kills: o.kills ?? null, matches: o.matches ?? null,
+      kd: o.kd ?? null, winRate: o.winRate ?? null, top1: o.top1 ?? o.wins ?? null,
+      updated: Date.now(),
+    };
+    cache = { data: out, name, time: Date.now() };
+    res.json(out);
+  } catch (e) {
+    res.status(500).json({ error: "fetch failed", detail: String(e) });
+  }
+});
+
+app.listen(PORT, () => console.log("KRYZEN relay ecoute sur :" + PORT));
